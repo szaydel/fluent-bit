@@ -46,9 +46,11 @@ struct flb_out_redis *flb_redis_conf_create(struct flb_output_instance *ins,
     /* Set default network configuration if not set */
     flb_output_net_default("127.0.0.1", 6379, ins);
 
-    ctx->key = flb_output_get_property("key", ins);
-    if(!ctx->key) {
-        ctx->key = flb_sds_alloc("default_key");
+    tmp = flb_output_get_property("key", ins);
+    if (tmp) {
+        flb_sds_copy(ctx->key, tmp, strlen(tmp));
+    } else {
+        ctx->key = flb_sds_create("default_key");
     }
 
 
@@ -117,6 +119,10 @@ void flb_redis_conf_destroy(struct flb_out_redis *ctx)
 {
     if (!ctx) {
         return;
+    }
+
+    if (ctx->key) {
+        flb_sds_destroy(ctx->key);
     }
 
     if (ctx->json_date_key) {
