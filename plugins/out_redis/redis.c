@@ -108,20 +108,60 @@
 //     return 0;
 // }
 
+struct flb_redis_entry {
+    flb_sds_t string;
+    struct mk_list _head;
+};
+
 static int cb_redis_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
+    fprintf(stderr, "In cb_redis_init\n");
     int ret;
     const char *tmp;
     struct flb_out_redis *ctx = NULL;
 
-    // printf("host => %s\n", ctx->host);
-    // printf("port => %d\n", ctx->port);
-    // printf("key  => %s\n", ctx->key);
+    struct flb_redis_entry *item = malloc(sizeof(struct flb_redis_entry));
+
+    // flb_sds_t s1, s2, s3;
+    // s1 = flb_sds_create_size(100);
+    // s2 = flb_sds_create_size(100);
+    // s3 = flb_sds_create_size(100);
+
+    // flb_sds_cat(s1, "alpha beta", 10);
+    // flb_sds_cat(s2, "alpha beta", 10);
+    // flb_sds_printf(&s1, "This is s1: %s\n");
+    // flb_sds_printf(&s2, "This is s2: %s\n");
+    // flb_sds_printf(&s3, "Hello s3: %s\n", "Hi");
+    // fprintf(stderr, "%s\n", s3);
+    // flb_sds_cmp(s1,)
 
 
+    // struct mk_list *head;
+    // struct mk_list *tmp_list;
+
+    // item->string = flb_sds_create("test string");
+
+    // flb_info("*item = %p | item->string = %p\n", item, item->string);
+
+    // struct mk_list mylist;
+    // mk_list_init(&mylist);
+    // mk_list_add(&item->_head, &mylist);
+
+    // struct flb_redis_entry *another_item;
+    // mk_list_foreach_safe(head, tmp_list, &mylist) {
+    //     another_item = mk_list_entry(head, struct flb_redis_entry, _head);
+    //     flb_info("*another_item = %p | item->string = %p\n", another_item, another_item->string);
+    //     flb_info("list item data value: %s", another_item->string);
+    //     mk_list_del(another_item);
+    // }
+
+    printf("(1)\n");
     ctx = flb_redis_conf_create(ins, config);
-    if (!ctx) return -1;
+    if (!ctx) {
+        flb_plg_error(ctx->ins, "failed to create redis instance");
+        return -1;
+        }
 
     ctx->ins = ins;
 
@@ -130,19 +170,19 @@ static int cb_redis_init(struct flb_output_instance *ins,
         flb_free(ctx);
         return -1;
     }
-
-    ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
-    tmp = flb_output_get_property("format", ins);
-    if (tmp) {
-        ret = flb_pack_to_json_format_type(tmp);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "unrecognized 'format' option. "
-                          "Using 'msgpack'");
-        }
-        else {
-            ctx->out_format = ret;
-        }
-    }
+printf("(1.1)\n");
+    // ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
+    // tmp = flb_output_get_property("format", ins);
+    // if (tmp) {
+    //     ret = flb_pack_to_json_format_type(tmp);
+    //     if (ret == -1) {
+    //         flb_plg_error(ctx->ins, "unrecognized 'format' option. "
+    //                       "Using 'msgpack'");
+    //     }
+    //     else {
+    //         ctx->out_format = ret;
+    //     }
+    // }
 
     /* Date format for JSON output */
     ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
@@ -157,10 +197,24 @@ static int cb_redis_init(struct flb_output_instance *ins,
             ctx->json_date_format = ret;
         }
     }
-
+printf("(2)\n");
     /* Export context */
     flb_output_set_context(ins, ctx);
 
+    printf("connecting to: %s %d\n", ins->host.name, ins->host.port);
+
+    ctx->redis_context = redisConnect(ins->host.name, ins->host.port);
+    if (!ctx->redis_context) {
+        flb_plg_error(ctx->ins, "could not create redis context got NULL pointer");
+        flb_free(ctx);
+        return NULL;
+    }
+    if (ctx->redis_context->err) {
+        flb_plg_error(ctx->ins, "could not create redis context");
+        flb_free(ctx);
+        return NULL;
+    }
+printf("(3)\n");
     return 0;
 }
 

@@ -31,7 +31,9 @@ struct flb_out_redis *flb_redis_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
 {
     int ret;
+    int io_flags = FLB_IO_TCP;
     const char *tmp;
+    struct flb_upstream *upstream;
     struct flb_out_redis *ctx = NULL;
 
     /* Allocate plugin context */
@@ -44,7 +46,7 @@ struct flb_out_redis *flb_redis_conf_create(struct flb_output_instance *ins,
     ctx->ins = ins;
 
     /* Set default network configuration if not set */
-    flb_output_net_default("127.0.0.1", 6379, ins);
+    flb_output_net_default("localhost", 6379, ins);
 
     tmp = flb_output_get_property("key", ins);
     if (tmp) {
@@ -53,9 +55,13 @@ struct flb_out_redis *flb_redis_conf_create(struct flb_output_instance *ins,
         ctx->key = flb_sds_create("default_key");
     }
 
+    printf("ctx->host: %s\n", ctx->host);
+    printf("ctx->key:  %s\n", ctx->key);
 
-    printf("(1) host ptr: %p\n", ctx->host);
-    printf("(1) key ptr: %p\n", ctx->key);
+    printf("ctx->ins->host.name: %s\n", ctx->ins->host.name);
+    printf("ctx->ins->host.port: %d\n", ctx->ins->host.port);
+    printf("ins->host.name: %s\n", ins->host.name);
+    printf("ins->host.port: %d\n", ins->host.port);
 
     /* Output format */
     ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
@@ -99,18 +105,6 @@ struct flb_out_redis *flb_redis_conf_create(struct flb_output_instance *ins,
 
     printf("host: %s\n", ctx->host);
     printf("(1) key ptr: %p\n", ctx->key);
-
-    ctx->redis_context = redisConnect(ins->host.name, ins->host.port);
-    if (!ctx->redis_context) {
-        flb_plg_error(ctx->ins, "could not create redis context got NULL pointer");
-        flb_free(ctx);
-        return NULL;
-    }
-    if (ctx->redis_context->err) {
-        flb_plg_error(ctx->ins, "could not create redis context");
-        flb_free(ctx);
-        return NULL;
-    }
 
     return ctx;
 }
