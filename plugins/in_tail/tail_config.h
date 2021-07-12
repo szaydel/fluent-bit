@@ -29,6 +29,9 @@
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
+#ifdef FLB_HAVE_PARSER
+#include <fluent-bit/multiline/flb_ml.h>
+#endif
 
 /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -79,6 +82,9 @@ struct flb_tail_config {
     flb_sds_t key;             /* key for unstructured record  */
     int   skip_long_lines;     /* skip long lines              */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+#ifdef FLB_HAVE_INOTIFY
+    int   inotify_watcher;     /* enable/disable inotify monitor */
+#endif
     flb_sds_t offset_key;      /* key name of file offset      */
 
     /* Database */
@@ -86,7 +92,7 @@ struct flb_tail_config {
     struct flb_sqldb *db;
     int db_sync;
     int db_locking;
-    struct flb_sqldb *db_journal_mode;
+    flb_sds_t db_journal_mode;
     sqlite3_stmt *stmt_get_file;
     sqlite3_stmt *stmt_insert_file;
     sqlite3_stmt *stmt_delete_file;
@@ -108,6 +114,10 @@ struct flb_tail_config {
     int docker_mode_flush;     /* Docker mode flush/wait */
     struct flb_parser *docker_mode_parser; /* Parser for separate multiline logs */
 
+    /* Multiline core engine */
+    struct flb_ml *ml_ctx;
+    struct mk_list *multiline_parsers;
+
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;
     struct mk_list files_event;
@@ -120,6 +130,8 @@ struct flb_tail_config {
 
     /* Plugin input instance */
     struct flb_input_instance *ins;
+
+    struct flb_config *config;
 };
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,

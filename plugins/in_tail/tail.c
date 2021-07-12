@@ -573,6 +573,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, exit_on_eof),
      "exit Fluent Bit when reaching EOF on a monitored file."
     },
+#ifdef FLB_HAVE_INOTIFY
+    {
+     FLB_CONFIG_MAP_BOOL, "inotify_watcher", "true",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, inotify_watcher),
+     "set to false to use file stat watcher instead of inotify."
+    },
+#endif
 #ifdef FLB_HAVE_REGEX
     {
      FLB_CONFIG_MAP_STR, "parser", NULL,
@@ -642,6 +649,12 @@ static struct flb_config_map config_map[] = {
      "Parser_2 ab2, Parser_N abN."
     },
 
+    /* Multiline Core Engine based API */
+    {
+     FLB_CONFIG_MAP_CLIST, "multiline.parser", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_tail_config, multiline_parsers),
+     "specify one or multiple multiline parsers: docker, cri, go, java, etc."
+    },
 #endif
 
     /* EOF */

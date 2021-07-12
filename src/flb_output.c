@@ -427,6 +427,14 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         flb_errno();
         return NULL;
     }
+
+    /* Initialize event type, if not set, default to FLB_OUTPUT_LOGS */
+    if (plugin->event_type == 0) {
+        instance->event_type = FLB_OUTPUT_LOGS;
+    }
+    else {
+        instance->event_type = plugin->event_type;
+    }
     instance->config = config;
     instance->log_level = -1;
     instance->test_mode = FLB_FALSE;
@@ -598,18 +606,27 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
         if (tmp) {
-            if (strcasecmp(tmp, "false") == 0 ||
+            if (strcasecmp(tmp, "no_limits") == 0 ||
+                strcasecmp(tmp, "false") == 0 ||
                 strcasecmp(tmp, "off") == 0) {
                 /* No limits for retries */
-                ins->retry_limit = -1;
+                ins->retry_limit = FLB_OUT_RETRY_UNLIMITED;
+            }
+            else if (strcasecmp(tmp, "no_retries") == 0) {
+                ins->retry_limit = FLB_OUT_RETRY_NONE;
             }
             else {
                 ins->retry_limit = atoi(tmp);
+                if (ins->retry_limit <= 0) {
+                    flb_warn("[config] invalid retry_limit. set default.");
+                    /* set default when input is invalid number */
+                    ins->retry_limit = 1;
+                }
             }
             flb_sds_destroy(tmp);
         }
         else {
-            ins->retry_limit = 0;
+            ins->retry_limit = 1;
         }
     }
     else if (strncasecmp("net.", k, 4) == 0 && tmp) {
@@ -824,6 +841,10 @@ int flb_output_init_all(struct flb_config *config)
                             "retries", ins->metrics);
             flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
                         "retries_failed", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_DROPPED_RECORDS,
+                        "dropped_records", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_RETRIED_RECORDS,
+                        "retried_records", ins->metrics);
         }
 #endif
 
@@ -832,6 +853,7 @@ int flb_output_init_all(struct flb_config *config)
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
             ret = flb_plugin_proxy_init(p->proxy, ins, config);
             if (ret == -1) {
+                flb_output_instance_destroy(ins);
                 return -1;
             }
             continue;
@@ -869,6 +891,7 @@ int flb_output_init_all(struct flb_config *config)
             if (!config_map) {
                 flb_error("[output] error loading config map for '%s' plugin",
                           p->name);
+                flb_output_instance_destroy(ins);
                 return -1;
             }
             ins->config_map = config_map;
@@ -931,6 +954,7 @@ int flb_output_init_all(struct flb_config *config)
         if (ret == -1) {
             flb_error("[output] Failed to initialize '%s' plugin",
                       p->name);
+            flb_output_instance_destroy(ins);
             return -1;
         }
 
@@ -940,6 +964,7 @@ int flb_output_init_all(struct flb_config *config)
             if (ret == -1) {
                 flb_error("[output] could not start thread pool for '%s' plugin",
                           p->name);
+                flb_output_instance_destroy(ins);
                 return -1;
             }
 

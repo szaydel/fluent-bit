@@ -52,6 +52,8 @@
 #define ERR_CODE_ALREADY_EXISTS         "ResourceAlreadyExistsException"
 #define ERR_CODE_INVALID_SEQUENCE_TOKEN "InvalidSequenceTokenException"
 
+#define AMZN_REQUEST_ID_HEADER          "x-amzn-RequestId"
+
 #define ONE_DAY_IN_MILLISECONDS          86400000
 #define FOUR_HOURS_IN_SECONDS            14400
 
@@ -376,9 +378,9 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     ret = flb_msgpack_to_json(tmp_buf_ptr,
                                   buf->tmp_buf_size - buf->tmp_buf_offset,
                                   obj);
-    if (ret < 0) {
+    if (ret <= 0) {
         /*
-         * negative value means failure to write to buffer,
+         * failure to write to buffer,
          * which means we ran out of space, and must send the logs
          */
         return 1;
@@ -770,6 +772,10 @@ struct msgpack_object pack_emf_payload(struct flb_cloudwatch *ctx,
     msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, 
                    &deserialized_emf_object);
 
+    /* free allocated memory */
+    msgpack_zone_destroy(&mempool);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
     return deserialized_emf_object;
 }
 
@@ -801,6 +807,9 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
 
     /* Added for EMF support */
     struct flb_intermediate_metric *metric;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_intermediate_metric *an_item;
 
     int intermediate_metric_type;
     char *intermediate_metric_unit;
@@ -900,13 +909,22 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                 metric->timestamp = tms;
 
                 mk_list_add(&metric->_head, &flb_intermediate_metrics);
+                
             }  
 
             struct msgpack_object emf_payload = pack_emf_payload(ctx, 
                                                                 &flb_intermediate_metrics, 
                                                                 input_plugin, 
                                                                 tms);
-            flb_free(metric);
+            
+            /* free the intermediate metric list */
+            
+            mk_list_foreach_safe(head, tmp, &flb_intermediate_metrics) {
+                an_item = mk_list_entry(head, struct flb_intermediate_metric, _head);
+                mk_list_del(&an_item->_head);
+                flb_free(an_item);
+            }
+
             ret = add_event(ctx, buf, stream, &emf_payload, &tms);
         } else {
             ret = add_event(ctx, buf, stream, &map, &tms);
@@ -1318,8 +1336,8 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 
         if (c->resp.status == 200) {
             /* success */
-            flb_plg_debug(ctx->ins, "Sent events to %s", stream->name);
             if (c->resp.payload_size > 0) {
+                flb_plg_debug(ctx->ins, "Sent events to %s", stream->name);
                 tmp = flb_json_get_val(c->resp.payload, c->resp.payload_size,
                                        "nextSequenceToken");
                 if (tmp) {
@@ -1327,16 +1345,28 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                         flb_sds_destroy(stream->sequence_token);
                     }
                     stream->sequence_token = tmp;
+
+                    flb_http_client_destroy(c);
+                    return 0;
                 }
                 else {
                     flb_plg_error(ctx->ins, "Could not find sequence token in "
                                   "response: %s", c->resp.payload);
                 }
             }
-            else {
-                flb_plg_error(ctx->ins, "Could not find sequence token in "
-                              "response: response body is empty");
+        
+            if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
+                /* code was 200, but response is invalid, treat as failure */
+                flb_plg_error(ctx->ins, "Recieved code 200 but response was invalid, %s header not found",
+                              AMZN_REQUEST_ID_HEADER);
+                if (c->resp.data != NULL) {
+                    flb_plg_debug(ctx->ins, "Could not find sequence token in "
+                                  "response: response body is empty: full data: `%.*s`", c->resp.data_len, c->resp.data);
+                }
+                flb_http_client_destroy(c);
+                return -1;
             }
+            
             flb_http_client_destroy(c);
             return 0;
         }
